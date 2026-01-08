@@ -18,6 +18,7 @@
 #include "libhttp.h"
 #include "wq.h"
 
+#define BACKLOG 1024
 /*
  * Global configuration variables.
  * You need to use these in your implementation of handle_files_request and
@@ -263,7 +264,16 @@ void serve_forever(int* socket_number, void (*request_handler)(int)) {
    */
 
   /* PART 1 BEGIN */
-
+  if ( bind(*socket_number, (struct sockaddr *) &server_address, sizeof(server_address)) ==
+	 -1) {
+    perror("Failed to bind socket to a port number");
+    exit(errno); 
+  }
+  
+  if (listen(*socket_number, BACKLOG) == -1){
+    perror("Failed to listen for incoming connections");
+    exit(errno); 
+  } 
   /* PART 1 END */
   printf("Listening on port %d...\n", server_port);
 
