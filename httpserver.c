@@ -21,7 +21,7 @@
 
 #define BACKLOG 1024
 #define KB 1024
-#define REQUEST_MAX_SIZE (70 * KB)
+#define MAXDATASIZE (70 * KB)
 /*
  * Global configuration variables.
  * You need to use these in your implementation of handle_files_request and
@@ -51,8 +51,8 @@ void serve_file(int fd, char* path) {
   /* TODO: PART 2 */
   /* PART 2 BEGIN */
   int file_fd = open(path, O_RDONLY);
-  uint8_t* buf = malloc(sizeof(uint8_t) * REQUEST_MAX_SIZE);
-  size_t count = KB, total_bytes = 0, buf_size = REQUEST_MAX_SIZE;
+  uint8_t* buf = malloc(sizeof(uint8_t) * MAXDATASIZE);
+  size_t count = KB, total_bytes = 0, buf_size = MAXDATASIZE;
   ssize_t bs;
   while((bs = read(file_fd, buf + total_bytes, count)) > 0){
     total_bytes += bs;
@@ -99,7 +99,7 @@ void serve_directory(int fd, char* path) {
    * function in libhttp.c may be useful here)
    */
   struct dirent* dr;
-  char* buffer = malloc(sizeof(char) * REQUEST_MAX_SIZE); 
+  char* buffer = malloc(sizeof(char) * MAXDATASIZE); 
   size_t buffer_size = 0; 
   size_t path_length = strlen(path);
   size_t href_length = strlen("<a href=\"//\"></a><br/>");
@@ -117,7 +117,7 @@ void serve_directory(int fd, char* path) {
       continue;
     }
     size_t total_length = href_length + path_length + strlen(filename) * 2 + 1; 
-    if ((buffer_size + total_length + closing_html_length ) > REQUEST_MAX_SIZE){
+    if ((buffer_size + total_length + closing_html_length ) > MAXDATASIZE){
 	    break;
      }
     http_format_href(buffer + buffer_size, path, filename);
@@ -222,6 +222,25 @@ void handle_files_request(int fd) {
  *
  *   Closes client socket (fd) and proxy target fd (target_fd) when finished.
  */
+void* proxy_threadfun(void* arg){
+  int* fds = (int *) arg;
+  int sender = fds[0];
+  int receiver = fds[1];
+
+  uint8_t* buf = malloc(sizeof(uint8_t) * MAXDATASIZE);
+  ssize_t bytes_received, bytes_sent;
+  while ((bytes_received = recv(sender, buf, MAXDATASIZE, 0)) > 0){
+    if (send(receiver, buf, bytes_received, 0) == -1){
+	    perror("send");
+	    break;
+    }
+  }
+  if (bytes_received < 0)
+	  perror("recv");
+  free(buf);
+  return NULL;
+}
+
 void handle_proxy_request(int fd) {
 
   /*
@@ -272,7 +291,25 @@ void handle_proxy_request(int fd) {
 
   /* TODO: PART 4 */
   /* PART 4 BEGIN */
+  pthread_t client_thread, proxy_thread;
+  
+  int client_args[] = {fd, target_fd};
+  int proxy_args[] = {target_fd, fd};
 
+  if (pthread_create(&client_thread, NULL, proxy_threadfun, client_args) != 0){
+    exit(errno);
+  };
+  if (pthread_create(&proxy_thread, NULL, proxy_threadfun, proxy_args) != 0){
+    exit(errno);
+  };
+
+  if (pthread_join(client_thread, NULL) != 0 || pthread_join(proxy_thread, NULL) != 0) {
+    exit(errno);
+  };
+  
+
+  close(fd);
+  close(target_fd);
   /* PART 4 END */
 }
 
