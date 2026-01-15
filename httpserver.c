@@ -1,4 +1,5 @@
 #include <arpa/inet.h>
+#include <assert.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -7,18 +8,20 @@
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <unistd.h>
 
 #include "libhttp.h"
 #include "wq.h"
 
 #define BACKLOG 1024
+#define KB 1024
+#define REQUEST_MAX_SIZE (70 * KB)
 /*
  * Global configuration variables.
  * You need to use these in your implementation of handle_files_request and
@@ -32,6 +35,13 @@ char* server_files_directory;
 char* server_proxy_hostname;
 int server_proxy_port;
 
+/* Utilities */
+void serve_404(int fd){
+    http_start_response(fd, 404);
+    http_send_header(fd, "Content-Type", "text/html");
+    http_end_headers(fd);
+}
+
 /*
  * Serves the contents the file stored at `path` to the client socket `fd`.
  * It is the caller's reponsibility to ensure that the file stored at `path` exists.
@@ -40,31 +50,93 @@ void serve_file(int fd, char* path) {
 
   /* TODO: PART 2 */
   /* PART 2 BEGIN */
+  int file_fd = open(path, O_RDONLY);
+  uint8_t* buf = malloc(sizeof(uint8_t) * REQUEST_MAX_SIZE);
+  size_t count = KB, total_bytes = 0, buf_size = REQUEST_MAX_SIZE;
+  ssize_t bs;
+  while((bs = read(file_fd, buf + total_bytes, count)) > 0){
+    total_bytes += bs;
+    buf_size -= bs;
+    if (buf_size < KB)
+	    count = buf_size;
+    else if (buf_size == 0)
+	    break;
+  }
+
+  char content_length[6];
+  snprintf(content_length, sizeof(content_length), "%ld", total_bytes);
 
   http_start_response(fd, 200);
   http_send_header(fd, "Content-Type", http_get_mime_type(path));
-  http_send_header(fd, "Content-Length", "0"); // TODO: change this line too
+  http_send_header(fd, "Content-Length", content_length); // TODO: change this line too
   http_end_headers(fd);
-
+  
+  send(fd, buf, total_bytes, 0); 
+  free(buf);
   /* PART 2 END */
 }
 
-void serve_directory(int fd, char* path) {
-  http_start_response(fd, 200);
-  http_send_header(fd, "Content-Type", http_get_mime_type(".html"));
-  http_end_headers(fd);
+void serve_directory(int fd, char* path) {	
+  /* If directory contains an index.html file then serve it */
+  char* index_file_path = malloc(strlen(path) + strlen("/index.html") + 1);
+  http_format_index(index_file_path, path);
+  struct stat sb;
+  if ((stat(index_file_path, &sb) == 0) && (S_ISREG(sb.st_mode))){
+     serve_file(fd, index_file_path);
+     free(index_file_path);
+     return;
+  }
+  free(index_file_path);
 
   /* TODO: PART 3 */
   /* PART 3 BEGIN */
 
   // TODO: Open the directory (Hint: opendir() may be useful here)
-
+  DIR* dp = opendir(path); assert(dp != NULL);
   /**
    * TODO: For each entry in the directory (Hint: look at the usage of readdir() ),
    * send a string containing a properly formatted HTML. (Hint: the http_format_href()
    * function in libhttp.c may be useful here)
    */
+  struct dirent* dr;
+  char* buffer = malloc(sizeof(char) * REQUEST_MAX_SIZE); 
+  size_t buffer_size = 0; 
+  size_t path_length = strlen(path);
+  size_t href_length = strlen("<a href=\"//\"></a><br/>");
+  
+  char* opening_html = "<!DOCTYPE html>\n<html>\n<head><meta charset=\"UTF-8\"><title>CS 162 is the best</title></head>\n<body>\n";
+  char* closing_html = "</body></html>";
+  
+  strcpy(buffer, opening_html);
+  buffer_size = strlen(opening_html) + 1;
+  
+  size_t closing_html_length = strlen(closing_html) + 1;
+  while ((dr = readdir(dp)) != NULL){
+    char *filename = dr->d_name;
+    if (strcmp(".", filename) == 0 || strcmp("..", filename) == 0){
+      continue;
+    }
+    size_t total_length = href_length + path_length + strlen(filename) * 2 + 1; 
+    if ((buffer_size + total_length + closing_html_length ) > REQUEST_MAX_SIZE){
+	    break;
+     }
+    http_format_href(buffer + buffer_size, path, filename);
+    buffer_size += total_length;
+  }
 
+  strcpy(buffer + buffer_size, closing_html);
+  buffer_size += closing_html_length;
+
+  char content_length[6];
+  snprintf(content_length, sizeof(content_length), "%ld", buffer_size); 
+  
+  http_start_response(fd, 200);
+  http_send_header(fd, "Content-Type", http_get_mime_type(".html"));
+  http_send_header(fd, "Content-Length", content_length);
+  http_end_headers(fd);
+
+  send(fd, buffer, buffer_size, 0);
+  free(buffer);
   /* PART 3 END */
 }
 
@@ -118,7 +190,19 @@ void handle_files_request(int fd) {
    */
 
   /* PART 2 & 3 BEGIN */
+  struct stat sb;
+  if (stat(path, &sb) == -1){ 
+    serve_404(fd);
+    close(fd);
+    return;
+  }
 
+  if (S_ISREG(sb.st_mode)) 
+    serve_file(fd, path);
+  else if (S_ISDIR(sb.st_mode)) 
+    serve_directory(fd, path);
+  else
+    serve_404(fd);
   /* PART 2 & 3 END */
 
   close(fd);
