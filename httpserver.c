@@ -441,7 +441,19 @@ void serve_forever(int* socket_number, void (*request_handler)(int)) {
      */
 
     /* PART 5 BEGIN */
+    pid_t cpid = fork();
+    if (cpid < 0)
+	    exit(errno);
 
+    if (cpid > 0){
+      if (close(client_socket_number) < 0){
+        perror("close");
+	exit(1);
+      };
+    } else {
+      request_handler(client_socket_number);
+      return;  
+    }
     /* PART 5 END */
 
 #elif THREADSERVER
