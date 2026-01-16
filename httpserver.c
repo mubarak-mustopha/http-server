@@ -344,6 +344,19 @@ void init_thread_pool(int num_threads, void (*request_handler)(int)) {
 }
 #endif
 
+#ifdef THREADSERVER
+typedef struct {
+  int* client_socket;
+  void (*request_handler)(int);
+} threadserver_arg_t;
+
+void* thread_serverfunc(void* arg){
+  threadserver_arg_t* args = (threadserver_arg_t *) arg;
+  args->request_handler(*(args->client_socket));
+  return NULL;
+}
+#endif
+
 /*
  * Opens a TCP stream socket on all interfaces with port number PORTNO. Saves
  * the fd number of the server socket in *socket_number. For each accepted
@@ -467,8 +480,15 @@ void serve_forever(int* socket_number, void (*request_handler)(int)) {
      * thread will NOT be joining with the new thread.
      */
 
-    /* PART 6 BEGIN */
+    /* PART 6 BEGIN */   
+    threadserver_arg_t arg;
+    arg.client_socket = &client_socket_number;
+    arg.request_handler = request_handler;
 
+    pthread_t thread; 
+    if (pthread_create(&thread, NULL, thread_serverfunc, &arg) != 0){
+	    exit(errno);
+    }
     /* PART 6 END */
 #elif POOLSERVER
     /*
