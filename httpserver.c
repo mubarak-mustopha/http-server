@@ -291,21 +291,24 @@ void handle_proxy_request(int fd) {
 
   /* TODO: PART 4 */
   /* PART 4 BEGIN */
-  pthread_t client_thread, proxy_thread;
+  pthread_t proxy_threads[2];
   
-  int client_args[] = {fd, target_fd};
-  int proxy_args[] = {target_fd, fd};
-
-  if (pthread_create(&client_thread, NULL, proxy_threadfun, client_args) != 0){
-    exit(errno);
-  };
-  if (pthread_create(&proxy_thread, NULL, proxy_threadfun, proxy_args) != 0){
-    exit(errno);
+  int thread_args[2][2] = { 
+    {target_fd, fd},
+    {fd, target_fd}
   };
 
-  if (pthread_join(client_thread, NULL) != 0 || pthread_join(proxy_thread, NULL) != 0) {
-    exit(errno);
-  };
+  for (int i = 0; i < 2; i++){
+    if (pthread_create(&proxy_threads[i], NULL, proxy_threadfun, &thread_args[i]) != 0){
+      exit(errno);
+    }
+  }
+  
+  for (int i = 0; i < 2; i++) {
+    if (pthread_join(proxy_threads[i], NULL) != 0) { 
+      exit(errno);
+    }
+  }
   
 
   close(fd);
