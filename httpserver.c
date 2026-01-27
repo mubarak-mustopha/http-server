@@ -226,13 +226,13 @@ void handle_files_request(int fd) {
  */
 void* proxy_threadfun(void* arg){
   int* fds = (int *) arg;
-  int sender = fds[0];
-  int receiver = fds[1];
+  int read_sockfd = fds[0];
+  int write_sockfd = fds[1];
 
   uint8_t* buf = malloc(sizeof(uint8_t) * MAXDATASIZE);
   ssize_t bytes_received;
-  while ((bytes_received = recv(sender, buf, MAXDATASIZE, 0)) > 0){
-    if (send(receiver, buf, bytes_received, 0) == -1){
+  while ((bytes_received = recv(read_sockfd, buf, MAXDATASIZE, 0)) > 0){
+    if (send(write_sockfd, buf, bytes_received, 0) == -1){
 	    perror("send");
 	    break;
     }
