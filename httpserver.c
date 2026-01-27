@@ -62,6 +62,7 @@ void serve_file(int fd, char* path) {
     else if (buf_size == 0)
 	    break;
   }
+  close(file_fd);
 
   char content_length[6];
   snprintf(content_length, sizeof(content_length), "%ld", total_bytes);
@@ -478,6 +479,7 @@ void serve_forever(int* socket_number, void (*request_handler)(int)) {
 	exit(1);
       };
     } else {
+      close(*socket_number);
       request_handler(client_socket_number);
       return;  
     }
