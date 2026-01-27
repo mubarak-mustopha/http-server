@@ -14,6 +14,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "libhttp.h"
@@ -372,6 +373,19 @@ void* thread_serverfunc(void* arg){
 }
 #endif
 
+#ifdef FORKSERVER
+void sigchld_handler(int signum){
+  (void)signum; //quiet unused variable warning
+	
+  //waitpid might override errno, so we save and restore it:
+  int saved_errno = errno;
+
+  while(waitpid(-1, NULL, WNOHANG) > 0);
+
+  errno = saved_errno;
+}
+#endif
+
 /*
  * Opens a TCP stream socket on all interfaces with port number PORTNO. Saves
  * the fd number of the server socket in *socket_number. For each accepted
@@ -469,6 +483,16 @@ void serve_forever(int* socket_number, void (*request_handler)(int)) {
      */
 
     /* PART 5 BEGIN */
+    struct sigaction sa;
+
+    sa.sa_handler = sigchld_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    if (sigaction(SIGCHLD, &sa, NULL) == -1){
+      perror("sigaction");
+      exit(1);
+    }
+
     pid_t cpid = fork();
     if (cpid < 0)
 	    exit(errno);
