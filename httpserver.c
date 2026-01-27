@@ -362,13 +362,20 @@ void init_thread_pool(int num_threads, void (*request_handler)(int)) {
 
 #ifdef THREADSERVER
 typedef struct {
-  int* client_socket;
+  int client_socket;
   void (*request_handler)(int);
 } threadserver_arg_t;
 
 void* thread_serverfunc(void* arg){
+  // Detach so thread frees memory on completion, no pthread_join
+  // call by parent thread.
+  pthread_detach(pthread_self());
+  
   threadserver_arg_t* args = (threadserver_arg_t *) arg;
-  args->request_handler(*(args->client_socket));
+  int client_socket_fd = args->client_socket;
+  void (*request_handler)(int) = args->request_handler; 
+  request_handler(client_socket_fd);
+  free(args);
   return NULL;
 }
 #endif
@@ -521,12 +528,12 @@ void serve_forever(int* socket_number, void (*request_handler)(int)) {
      */
 
     /* PART 6 BEGIN */   
-    threadserver_arg_t arg;
-    arg.client_socket = &client_socket_number;
-    arg.request_handler = request_handler;
+    threadserver_arg_t* arg = malloc(sizeof(threadserver_arg_t));
+    arg->client_socket = client_socket_number;  
+    arg->request_handler = request_handler;
 
     pthread_t thread; 
-    if (pthread_create(&thread, NULL, thread_serverfunc, &arg) != 0){
+    if (pthread_create(&thread, NULL, thread_serverfunc, arg) != 0){
 	    exit(errno);
     }
     /* PART 6 END */
